@@ -1,0 +1,35 @@
+name: Gerar APK Tetris (Expo)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compilar APK no EAS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar o Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 3. Configurar a CLI do Expo e EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 4. Instalar dependências do projeto
+        run: npm install
+
+      - name: 5. Compilar o APK via EAS Build
+        run: eas build --platform android --profile preview --non-interactive
+        
