@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,12 +14,12 @@ const BOARD_HEIGHT = 20;
 
 const TETROMINOS = {
   I: { shape: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], color: '#00f0f0' },
-  J: { shape: [[1,0,0],[1,1,1],[0,0,0]], color: '#0000f0' },
-  L: { shape: [[0,0,1],[1,1,1],[0,0,0]], color: '#f0a000' },
-  O: { shape: [[1,1],[1,1]], color: '#f0f000' },
-  S: { shape: [[0,1,1],[1,1,0],[0,0,0]], color: '#00f000' },
-  T: { shape: [[0,1,0],[1,1,1],[0,0,0]], color: '#a000f0' },
-  Z: { shape: [[1,1,0],[0,1,1],[0,0,0]], color: '#f00000' },
+  J: { shape: [[1,0,0],[1,1,1],[0,0,0]], color: '#2563eb' },
+  L: { shape: [[0,0,1],[1,1,1],[0,0,0]], color: '#f97316' },
+  O: { shape: [[1,1],[1,1]], color: '#facc15' },
+  S: { shape: [[0,1,1],[1,1,0],[0,0,0]], color: '#22c55e' },
+  T: { shape: [[0,1,0],[1,1,1],[0,0,0]], color: '#a855f7' },
+  Z: { shape: [[1,1,0],[0,1,1],[0,0,0]], color: '#ef4444' },
 };
 
 const getRandomTetromino = () => {
@@ -32,10 +32,13 @@ const createEmptyBoard = () =>
   Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(0));
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-// Ajuste dinâmico do tamanho das células para dar espaço de sobra aos botões em baixo
-const CELL_SIZE = Math.min(
-  Math.floor((SCREEN_WIDTH - 40) / BOARD_WIDTH),
-  Math.floor((SCREEN_HEIGHT * 0.55) / BOARD_HEIGHT)
+
+// Ocupa o máximo de espaço horizontal e vertical disponível
+const MAX_BOARD_WIDTH = SCREEN_WIDTH - 20;
+const MAX_BOARD_HEIGHT = SCREEN_HEIGHT - 220; // Garante espaço para o topo e botões
+
+const CELL_SIZE = Math.floor(
+  Math.min(MAX_BOARD_WIDTH / BOARD_WIDTH, MAX_BOARD_HEIGHT / BOARD_HEIGHT)
 );
 
 export default function App() {
@@ -47,8 +50,13 @@ export default function App() {
   const [lines, setLines] = useState(0);
   const [gameOver, setGameOver] = useState(false);
 
+  // Refs para ler estado atualizado em funções assíncronas
+  const stateRef = useRef();
+  stateRef.current = { board, currentPiece, position, nextPiece, gameOver };
+
   const resetGame = () => {
-    setBoard(createEmptyBoard());
+    const emptyBoard = createEmptyBoard();
+    setBoard(emptyBoard);
     setScore(0);
     setLines(0);
     setGameOver(false);
@@ -63,60 +71,61 @@ export default function App() {
     resetGame();
   }, []);
 
-  const checkCollision = useCallback(
-    (piece, pos, currentBoard = board) => {
-      if (!piece) return false;
-      for (let r = 0; r < piece.shape.length; r++) {
-        for (let c = 0; c < piece.shape[r].length; c++) {
-          if (piece.shape[r][c] !== 0) {
-            const newX = pos.x + c;
-            const newY = pos.y + r;
-            if (
-              newX < 0 ||
-              newX >= BOARD_WIDTH ||
-              newY >= BOARD_HEIGHT ||
-              (newY >= 0 && currentBoard[newY][newX] !== 0)
-            ) {
-              return true;
-            }
+  const checkCollision = useCallback((piece, pos, currentBoard) => {
+    if (!piece) return false;
+    for (let r = 0; r < piece.shape.length; r++) {
+      for (let c = 0; c < piece.shape[r].length; c++) {
+        if (piece.shape[r][c] !== 0) {
+          const newX = pos.x + c;
+          const newY = pos.y + r;
+          if (
+            newX < 0 ||
+            newX >= BOARD_WIDTH ||
+            newY >= BOARD_HEIGHT ||
+            (newY >= 0 && currentBoard[newY][newX] !== 0)
+          ) {
+            return true;
           }
         }
       }
-      return false;
-    },
-    [board]
-  );
+    }
+    return false;
+  }, []);
 
   const rotateMatrix = (matrix) => {
     return matrix[0].map((_, index) => matrix.map((col) => col[index]).reverse());
   };
 
   const move = (dir) => {
+    const { currentPiece, position, board, gameOver } = stateRef.current;
     if (gameOver || !currentPiece) return;
     const newPos = { ...position, x: position.x + dir };
-    if (!checkCollision(currentPiece, newPos)) {
+    if (!checkCollision(currentPiece, newPos, board)) {
       setPosition(newPos);
     }
   };
 
   const rotate = () => {
+    const { currentPiece, position, board, gameOver } = stateRef.current;
     if (gameOver || !currentPiece) return;
     const rotatedShape = rotateMatrix(currentPiece.shape);
     const rotatedPiece = { ...currentPiece, shape: rotatedShape };
-    if (!checkCollision(rotatedPiece, position)) {
+    if (!checkCollision(rotatedPiece, position, board)) {
       setCurrentPiece(rotatedPiece);
     }
   };
 
-  const lockPiece = useCallback(() => {
+  const lockPieceAtPosition = (pieceToLock, finalPos) => {
+    const { board, nextPiece } = stateRef.current;
     const newBoard = board.map((row) => [...row]);
-    for (let r = 0; r < currentPiece.shape.length; r++) {
-      for (let c = 0; c < currentPiece.shape[r].length; c++) {
-        if (currentPiece.shape[r][c] !== 0) {
-          const boardY = position.y + r;
-          const boardX = position.x + c;
+
+    for (let r = 0; r < pieceToLock.shape.length; r++) {
+      for (let c = 0; c < pieceToLock.shape[r].length; c++) {
+        if (pieceToLock.shape[r][c] !== 0) {
+          const boardY = finalPos.y + r;
+          const boardX = finalPos.x + c;
           if (boardY >= 0 && boardY < BOARD_HEIGHT) {
-            newBoard[boardY][boardX] = currentPiece.color;
+            newBoard[boardY][boardX] = pieceToLock.color;
           }
         }
       }
@@ -151,26 +160,33 @@ export default function App() {
       setNextPiece(upcomingPiece);
       setPosition(newPos);
     }
-  }, [board, currentPiece, nextPiece, position, checkCollision]);
+  };
 
   const drop = useCallback(() => {
+    const { currentPiece, position, board, gameOver } = stateRef.current;
     if (gameOver || !currentPiece) return;
+
     const newPos = { ...position, y: position.y + 1 };
-    if (!checkCollision(currentPiece, newPos)) {
+    if (!checkCollision(currentPiece, newPos, board)) {
       setPosition(newPos);
     } else {
-      lockPiece();
+      lockPieceAtPosition(currentPiece, position);
     }
-  }, [gameOver, currentPiece, position, checkCollision, lockPiece]);
+  }, [checkCollision]);
 
+  // Ação do Botão Laranja: Descer a peça diretamente até ao fundo
   const hardDrop = () => {
+    const { currentPiece, position, board, gameOver } = stateRef.current;
     if (gameOver || !currentPiece) return;
+
     let currentY = position.y;
-    while (!checkCollision(currentPiece, { x: position.x, y: currentY + 1 })) {
+    while (!checkCollision(currentPiece, { x: position.x, y: currentY + 1 }, board)) {
       currentY++;
     }
-    setPosition({ x: position.x, y: currentY });
-    setTimeout(() => drop(), 40);
+
+    const finalPos = { x: position.x, y: currentY };
+    setPosition(finalPos);
+    lockPieceAtPosition(currentPiece, finalPos);
   };
 
   useEffect(() => {
@@ -203,47 +219,49 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {/* Topo / Placar */}
+      {/* Topo / Placar Super Visível */}
       <View style={styles.header}>
-        <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>PONTOS</Text>
-          <Text style={styles.infoValue}>{score}</Text>
+        <View style={[styles.scoreCard, styles.pointsBorder]}>
+          <Text style={styles.scoreLabel}>PONTOS</Text>
+          <Text style={[styles.scoreValue, styles.yellowText]}>{score}</Text>
         </View>
 
         <TouchableOpacity style={styles.button} onPress={resetGame}>
-          <Text style={styles.buttonText}>{gameOver ? 'Recomeçar' : 'Novo Jogo'}</Text>
+          <Text style={styles.buttonText}>{gameOver ? 'RECOMEÇAR' : 'NOVO JOGO'}</Text>
         </TouchableOpacity>
 
-        <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>LINHAS</Text>
-          <Text style={styles.infoValue}>{lines}</Text>
+        <View style={[styles.scoreCard, styles.linesBorder]}>
+          <Text style={styles.scoreLabel}>LINHAS</Text>
+          <Text style={[styles.scoreValue, styles.cyanText]}>{lines}</Text>
         </View>
       </View>
 
-      {/* Tabuleiro do Tetris */}
-      <View style={styles.boardContainer}>
-        {renderBoard().map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.row}>
-            {row.map((cell, colIndex) => (
-              <View
-                key={colIndex}
-                style={[
-                  styles.cell,
-                  { backgroundColor: cell === 0 ? '#0f172a' : cell },
-                ]}
-              />
-            ))}
-          </View>
-        ))}
+      {/* Quadro Expandido do Jogo */}
+      <View style={styles.boardWrapper}>
+        <View style={styles.boardContainer}>
+          {renderBoard().map((row, rowIndex) => (
+            <View key={rowIndex} style={styles.row}>
+              {row.map((cell, colIndex) => (
+                <View
+                  key={colIndex}
+                  style={[
+                    styles.cell,
+                    { backgroundColor: cell === 0 ? '#0b1329' : cell },
+                  ]}
+                />
+              ))}
+            </View>
+          ))}
 
-        {gameOver && (
-          <View style={styles.overlay}>
-            <Text style={styles.gameOverText}>FIM DE JOGO</Text>
-          </View>
-        )}
+          {gameOver && (
+            <View style={styles.overlay}>
+              <Text style={styles.gameOverText}>FIM DE JOGO</Text>
+            </View>
+          )}
+        </View>
       </View>
 
-      {/* Barra Inferior com os Botões de Controlo */}
+      {/* Barra de Controlos */}
       <View style={styles.controlsBar}>
         <TouchableOpacity style={styles.btn} onPress={() => move(-1)}>
           <Text style={styles.btnText}>◄</Text>
@@ -253,7 +271,7 @@ export default function App() {
           <Text style={styles.btnText}>↻</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.btn, styles.dropBtn]} onPress={hardDrop}>
+        <TouchableOpacity style={[styles.btn, styles.hardDropBtn]} onPress={hardDrop}>
           <Text style={styles.btnText}>⬇</Text>
         </TouchableOpacity>
 
@@ -275,43 +293,68 @@ const styles = StyleSheet.create({
     backgroundColor: '#030712',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingVertical: 6,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    width: '92%',
-    marginTop: 5,
+    width: '94%',
+    marginTop: 4,
   },
-  infoBox: {
+  scoreCard: {
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
     alignItems: 'center',
+    minWidth: 85,
+    borderWidth: 1.5,
   },
-  infoTitle: {
-    color: '#9ca3af',
+  pointsBorder: {
+    borderColor: '#eab308',
+  },
+  linesBorder: {
+    borderColor: '#06b6d4',
+  },
+  scoreLabel: {
+    color: '#94a3b8',
     fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  scoreValue: {
+    fontSize: 22,
     fontWeight: 'bold',
   },
-  infoValue: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
+  yellowText: {
+    color: '#facc15',
+  },
+  cyanText: {
+    color: '#22d3ee',
   },
   button: {
     backgroundColor: '#2563eb',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+    elevation: 4,
   },
   buttonText: {
     color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 13,
+  },
+  boardWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 4,
   },
   boardContainer: {
     borderWidth: 2,
     borderColor: '#1e293b',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0b1329',
     position: 'relative',
   },
   row: {
@@ -320,8 +363,8 @@ const styles = StyleSheet.create({
   cell: {
     width: CELL_SIZE,
     height: CELL_SIZE,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -331,7 +374,7 @@ const styles = StyleSheet.create({
   },
   gameOverText: {
     color: '#ef4444',
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: 'bold',
   },
   controlsBar: {
@@ -339,25 +382,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-evenly',
     alignItems: 'center',
     width: '100%',
-    paddingHorizontal: 10,
-    paddingBottom: 15,
+    paddingHorizontal: 8,
+    paddingBottom: 12,
+    paddingTop: 10,
     backgroundColor: '#090d16',
-    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#1e293b',
   },
   btn: {
-    width: 58,
-    height: 58,
+    width: 60,
+    height: 60,
     backgroundColor: '#1e293b',
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#334155',
-    elevation: 4,
   },
-  dropBtn: {
+  hardDropBtn: {
     backgroundColor: '#d97706',
     borderColor: '#f59e0b',
   },
@@ -367,4 +409,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-                                                  
