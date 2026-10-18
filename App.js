@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Dimensions,
+  StatusBar,
 } from 'react-native';
 
 const BOARD_WIDTH = 10;
@@ -30,10 +31,14 @@ const getRandomTetromino = () => {
 const createEmptyBoard = () =>
   Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(0));
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CELL_SIZE = Math.floor((SCREEN_WIDTH - 40) / BOARD_WIDTH);
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Ajuste dinâmico do tamanho das células para dar espaço de sobra aos botões em baixo
+const CELL_SIZE = Math.min(
+  Math.floor((SCREEN_WIDTH - 40) / BOARD_WIDTH),
+  Math.floor((SCREEN_HEIGHT * 0.55) / BOARD_HEIGHT)
+);
 
-export default function TetrisGame() {
+export default function App() {
   const [board, setBoard] = useState(createEmptyBoard());
   const [currentPiece, setCurrentPiece] = useState(null);
   const [nextPiece, setNextPiece] = useState(getRandomTetromino());
@@ -41,15 +46,12 @@ export default function TetrisGame() {
   const [score, setScore] = useState(0);
   const [lines, setLines] = useState(0);
   const [gameOver, setGameOver] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
 
-  // Iniciar novo jogo
   const resetGame = () => {
     setBoard(createEmptyBoard());
     setScore(0);
     setLines(0);
     setGameOver(false);
-    setIsPaused(false);
     const firstPiece = getRandomTetromino();
     const secondPiece = getRandomTetromino();
     setCurrentPiece(firstPiece);
@@ -61,7 +63,6 @@ export default function TetrisGame() {
     resetGame();
   }, []);
 
-  // Verificar colisões
   const checkCollision = useCallback(
     (piece, pos, currentBoard = board) => {
       if (!piece) return false;
@@ -86,23 +87,20 @@ export default function TetrisGame() {
     [board]
   );
 
-  // Rodar matriz
   const rotateMatrix = (matrix) => {
     return matrix[0].map((_, index) => matrix.map((col) => col[index]).reverse());
   };
 
-  // Mover para os lados
   const move = (dir) => {
-    if (gameOver || isPaused || !currentPiece) return;
+    if (gameOver || !currentPiece) return;
     const newPos = { ...position, x: position.x + dir };
     if (!checkCollision(currentPiece, newPos)) {
       setPosition(newPos);
     }
   };
 
-  // Rodar peça
   const rotate = () => {
-    if (gameOver || isPaused || !currentPiece) return;
+    if (gameOver || !currentPiece) return;
     const rotatedShape = rotateMatrix(currentPiece.shape);
     const rotatedPiece = { ...currentPiece, shape: rotatedShape };
     if (!checkCollision(rotatedPiece, position)) {
@@ -110,7 +108,6 @@ export default function TetrisGame() {
     }
   };
 
-  // Fixar peça no tabuleiro e limpar linhas
   const lockPiece = useCallback(() => {
     const newBoard = board.map((row) => [...row]);
     for (let r = 0; r < currentPiece.shape.length; r++) {
@@ -125,7 +122,6 @@ export default function TetrisGame() {
       }
     }
 
-    // Verificar e remover linhas completas
     let clearedLines = 0;
     const filteredBoard = newBoard.filter((row) => {
       const isFull = row.every((cell) => cell !== 0);
@@ -144,7 +140,6 @@ export default function TetrisGame() {
 
     setBoard(filteredBoard);
 
-    // Próxima peça
     const newPiece = nextPiece;
     const upcomingPiece = getRandomTetromino();
     const newPos = { x: Math.floor((BOARD_WIDTH - newPiece.shape[0].length) / 2), y: 0 };
@@ -158,39 +153,34 @@ export default function TetrisGame() {
     }
   }, [board, currentPiece, nextPiece, position, checkCollision]);
 
-  // Descer peça
   const drop = useCallback(() => {
-    if (gameOver || isPaused || !currentPiece) return;
+    if (gameOver || !currentPiece) return;
     const newPos = { ...position, y: position.y + 1 };
     if (!checkCollision(currentPiece, newPos)) {
       setPosition(newPos);
     } else {
       lockPiece();
     }
-  }, [gameOver, isPaused, currentPiece, position, checkCollision, lockPiece]);
+  }, [gameOver, currentPiece, position, checkCollision, lockPiece]);
 
-  // Hard Drop (Descer tudo)
   const hardDrop = () => {
-    if (gameOver || isPaused || !currentPiece) return;
+    if (gameOver || !currentPiece) return;
     let currentY = position.y;
     while (!checkCollision(currentPiece, { x: position.x, y: currentY + 1 })) {
       currentY++;
     }
     setPosition({ x: position.x, y: currentY });
-    // Forçar fixação na posição final
-    setTimeout(() => drop(), 50);
+    setTimeout(() => drop(), 40);
   };
 
-  // Loop do jogo (Game Loop)
   useEffect(() => {
-    if (gameOver || isPaused) return;
+    if (gameOver) return;
     const interval = setInterval(() => {
       drop();
     }, 700);
     return () => clearInterval(interval);
-  }, [drop, gameOver, isPaused]);
+  }, [drop, gameOver]);
 
-  // Desenhar tabuleiro fundido com a peça atual
   const renderBoard = () => {
     const displayBoard = board.map((row) => [...row]);
     if (currentPiece && !gameOver) {
@@ -211,7 +201,9 @@ export default function TetrisGame() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Cabeçalho */}
+      <StatusBar barStyle="light-content" />
+
+      {/* Topo / Placar */}
       <View style={styles.header}>
         <View style={styles.infoBox}>
           <Text style={styles.infoTitle}>PONTOS</Text>
@@ -219,7 +211,7 @@ export default function TetrisGame() {
         </View>
 
         <TouchableOpacity style={styles.button} onPress={resetGame}>
-          <Text style={styles.buttonText}>{gameOver ? 'Reiniciar' : 'Novo Jogo'}</Text>
+          <Text style={styles.buttonText}>{gameOver ? 'Recomeçar' : 'Novo Jogo'}</Text>
         </TouchableOpacity>
 
         <View style={styles.infoBox}>
@@ -228,7 +220,7 @@ export default function TetrisGame() {
         </View>
       </View>
 
-      {/* Tabuleiro */}
+      {/* Tabuleiro do Tetris */}
       <View style={styles.boardContainer}>
         {renderBoard().map((row, rowIndex) => (
           <View key={rowIndex} style={styles.row}>
@@ -237,7 +229,7 @@ export default function TetrisGame() {
                 key={colIndex}
                 style={[
                   styles.cell,
-                  { backgroundColor: cell === 0 ? '#111827' : cell },
+                  { backgroundColor: cell === 0 ? '#0f172a' : cell },
                 ]}
               />
             ))}
@@ -246,34 +238,32 @@ export default function TetrisGame() {
 
         {gameOver && (
           <View style={styles.overlay}>
-            <Text style={styles.gameOverText}>GAME OVER</Text>
+            <Text style={styles.gameOverText}>FIM DE JOGO</Text>
           </View>
         )}
       </View>
 
-      {/* Controlos virtuais */}
-      <View style={styles.controls}>
-        <View style={styles.controlRow}>
-          <TouchableOpacity style={styles.controlBtn} onPress={rotate}>
-            <Text style={styles.btnText}>↻</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.controlRow}>
-          <TouchableOpacity style={styles.controlBtn} onPress={() => move(-1)}>
-            <Text style={styles.btnText}>←</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.controlBtn, styles.dropBtn]} onPress={hardDrop}>
-            <Text style={styles.btnText}>⇓</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.controlBtn} onPress={() => move(1)}>
-            <Text style={styles.btnText}>→</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.controlRow}>
-          <TouchableOpacity style={styles.controlBtn} onPress={drop}>
-            <Text style={styles.btnText}>↓</Text>
-          </TouchableOpacity>
-        </View>
+      {/* Barra Inferior com os Botões de Controlo */}
+      <View style={styles.controlsBar}>
+        <TouchableOpacity style={styles.btn} onPress={() => move(-1)}>
+          <Text style={styles.btnText}>◄</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.btn} onPress={rotate}>
+          <Text style={styles.btnText}>↻</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.btn, styles.dropBtn]} onPress={hardDrop}>
+          <Text style={styles.btnText}>⬇</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.btn} onPress={drop}>
+          <Text style={styles.btnText}>▼</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.btn} onPress={() => move(1)}>
+          <Text style={styles.btnText}>►</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -291,15 +281,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    width: '90%',
-    paddingHorizontal: 10,
+    width: '92%',
+    marginTop: 5,
   },
   infoBox: {
     alignItems: 'center',
   },
   infoTitle: {
     color: '#9ca3af',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
   },
   infoValue: {
@@ -320,8 +310,8 @@ const styles = StyleSheet.create({
   },
   boardContainer: {
     borderWidth: 2,
-    borderColor: '#374151',
-    backgroundColor: '#111827',
+    borderColor: '#1e293b',
+    backgroundColor: '#0f172a',
     position: 'relative',
   },
   row: {
@@ -331,7 +321,7 @@ const styles = StyleSheet.create({
     width: CELL_SIZE,
     height: CELL_SIZE,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -341,36 +331,40 @@ const styles = StyleSheet.create({
   },
   gameOverText: {
     color: '#ef4444',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: 'bold',
   },
-  controls: {
-    width: '100%',
-    alignItems: 'center',
-    paddingBottom: 10,
-  },
-  controlRow: {
+  controlsBar: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 15,
-    marginVertical: 4,
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 10,
+    paddingBottom: 15,
+    backgroundColor: '#090d16',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
   },
-  controlBtn: {
-    width: 60,
-    height: 60,
-    backgroundColor: '#1f2937',
-    borderRadius: 30,
+  btn: {
+    width: 58,
+    height: 58,
+    backgroundColor: '#1e293b',
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#4b5563',
+    borderColor: '#334155',
+    elevation: 4,
   },
   dropBtn: {
     backgroundColor: '#d97706',
+    borderColor: '#f59e0b',
   },
   btnText: {
     color: '#ffffff',
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
   },
 });
+                                                  
