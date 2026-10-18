@@ -33,9 +33,8 @@ const createEmptyBoard = () =>
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Ocupa o máximo de espaço horizontal e vertical disponível
 const MAX_BOARD_WIDTH = SCREEN_WIDTH - 20;
-const MAX_BOARD_HEIGHT = SCREEN_HEIGHT - 220; // Garante espaço para o topo e botões
+const MAX_BOARD_HEIGHT = SCREEN_HEIGHT - 230;
 
 const CELL_SIZE = Math.floor(
   Math.min(MAX_BOARD_WIDTH / BOARD_WIDTH, MAX_BOARD_HEIGHT / BOARD_HEIGHT)
@@ -48,18 +47,25 @@ export default function App() {
   const [position, setPosition] = useState({ x: 3, y: 0 });
   const [score, setScore] = useState(0);
   const [lines, setLines] = useState(0);
+  const [level, setLevel] = useState(1);
   const [gameOver, setGameOver] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
-  // Refs para ler estado atualizado em funções assíncronas
+  // Velocidade inicial bem mais lenta (1000ms = 1 segundo por queda)
+  const [dropSpeed, setDropSpeed] = useState(1000);
+
   const stateRef = useRef();
-  stateRef.current = { board, currentPiece, position, nextPiece, gameOver };
+  stateRef.current = { board, currentPiece, position, nextPiece, gameOver, isPaused };
 
   const resetGame = () => {
     const emptyBoard = createEmptyBoard();
     setBoard(emptyBoard);
     setScore(0);
     setLines(0);
+    setLevel(1);
+    setDropSpeed(1000); // Reseta a velocidade
     setGameOver(false);
+    setIsPaused(false);
     const firstPiece = getRandomTetromino();
     const secondPiece = getRandomTetromino();
     setCurrentPiece(firstPiece);
@@ -97,8 +103,8 @@ export default function App() {
   };
 
   const move = (dir) => {
-    const { currentPiece, position, board, gameOver } = stateRef.current;
-    if (gameOver || !currentPiece) return;
+    const { currentPiece, position, board, gameOver, isPaused } = stateRef.current;
+    if (gameOver || isPaused || !currentPiece) return;
     const newPos = { ...position, x: position.x + dir };
     if (!checkCollision(currentPiece, newPos, board)) {
       setPosition(newPos);
@@ -106,8 +112,8 @@ export default function App() {
   };
 
   const rotate = () => {
-    const { currentPiece, position, board, gameOver } = stateRef.current;
-    if (gameOver || !currentPiece) return;
+    const { currentPiece, position, board, gameOver, isPaused } = stateRef.current;
+    if (gameOver || isPaused || !currentPiece) return;
     const rotatedShape = rotateMatrix(currentPiece.shape);
     const rotatedPiece = { ...currentPiece, shape: rotatedShape };
     if (!checkCollision(rotatedPiece, position, board)) {
@@ -143,7 +149,15 @@ export default function App() {
     }
 
     if (clearedLines > 0) {
-      setLines((prev) => prev + clearedLines);
+      setLines((prev) => {
+        const newLines = prev + clearedLines;
+        // Sobe de nível a cada 5 linhas destruídas
+        const newLevel = Math.floor(newLines / 5) + 1;
+        setLevel(newLevel);
+        // Aumenta a velocidade de forma suave
+        setDropSpeed(Math.max(150, 1000 - (newLevel - 1) * 80));
+        return newLines;
+      });
       setScore((prev) => prev + clearedLines * 100 * clearedLines);
     }
 
@@ -163,8 +177,8 @@ export default function App() {
   };
 
   const drop = useCallback(() => {
-    const { currentPiece, position, board, gameOver } = stateRef.current;
-    if (gameOver || !currentPiece) return;
+    const { currentPiece, position, board, gameOver, isPaused } = stateRef.current;
+    if (gameOver || isPaused || !currentPiece) return;
 
     const newPos = { ...position, y: position.y + 1 };
     if (!checkCollision(currentPiece, newPos, board)) {
@@ -174,10 +188,9 @@ export default function App() {
     }
   }, [checkCollision]);
 
-  // Ação do Botão Laranja: Descer a peça diretamente até ao fundo
   const hardDrop = () => {
-    const { currentPiece, position, board, gameOver } = stateRef.current;
-    if (gameOver || !currentPiece) return;
+    const { currentPiece, position, board, gameOver, isPaused } = stateRef.current;
+    if (gameOver || isPaused || !currentPiece) return;
 
     let currentY = position.y;
     while (!checkCollision(currentPiece, { x: position.x, y: currentY + 1 }, board)) {
@@ -190,12 +203,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (gameOver) return;
+    if (gameOver || isPaused) return;
     const interval = setInterval(() => {
       drop();
-    }, 700);
+    }, dropSpeed);
     return () => clearInterval(interval);
-  }, [drop, gameOver]);
+  }, [drop, gameOver, isPaused, dropSpeed]);
 
   const renderBoard = () => {
     const displayBoard = board.map((row) => [...row]);
@@ -219,24 +232,33 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {/* Topo / Placar Super Visível */}
+      {/* Topo / Placar */}
       <View style={styles.header}>
         <View style={[styles.scoreCard, styles.pointsBorder]}>
           <Text style={styles.scoreLabel}>PONTOS</Text>
           <Text style={[styles.scoreValue, styles.yellowText]}>{score}</Text>
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={resetGame}>
-          <Text style={styles.buttonText}>{gameOver ? 'RECOMEÇAR' : 'NOVO JOGO'}</Text>
-        </TouchableOpacity>
+        <View style={styles.centerActions}>
+          <TouchableOpacity style={styles.button} onPress={resetGame}>
+            <Text style={styles.buttonText}>{gameOver ? 'RECOMEÇAR' : 'NOVO JOGO'}</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.pauseButton, isPaused && styles.pausedActive]}
+            onPress={() => setIsPaused(!isPaused)}
+          >
+            <Text style={styles.pauseButtonText}>{isPaused ? '▶ CONTINUAR' : '⏸ PAUSA'}</Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={[styles.scoreCard, styles.linesBorder]}>
-          <Text style={styles.scoreLabel}>LINHAS</Text>
+          <Text style={styles.scoreLabel}>LINHAS ({level}º NÍVEL)</Text>
           <Text style={[styles.scoreValue, styles.cyanText]}>{lines}</Text>
         </View>
       </View>
 
-      {/* Quadro Expandido do Jogo */}
+      {/* Quadro do Jogo */}
       <View style={styles.boardWrapper}>
         <View style={styles.boardContainer}>
           {renderBoard().map((row, rowIndex) => (
@@ -256,6 +278,12 @@ export default function App() {
           {gameOver && (
             <View style={styles.overlay}>
               <Text style={styles.gameOverText}>FIM DE JOGO</Text>
+            </View>
+          )}
+
+          {isPaused && !gameOver && (
+            <View style={styles.overlay}>
+              <Text style={styles.pauseText}>PAUSADO</Text>
             </View>
           )}
         </View>
@@ -302,9 +330,13 @@ const styles = StyleSheet.create({
     width: '94%',
     marginTop: 4,
   },
+  centerActions: {
+    alignItems: 'center',
+    gap: 4,
+  },
   scoreCard: {
     backgroundColor: '#0f172a',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
     alignItems: 'center',
@@ -319,12 +351,12 @@ const styles = StyleSheet.create({
   },
   scoreLabel: {
     color: '#94a3b8',
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
   scoreValue: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
   },
   yellowText: {
@@ -335,15 +367,28 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: '#2563eb',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    elevation: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   buttonText: {
     color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 13,
+    fontSize: 12,
+  },
+  pauseButton: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  pausedActive: {
+    backgroundColor: '#16a34a',
+  },
+  pauseButtonText: {
+    color: '#ffffff',
+    fontWeight: 'bold',
+    fontSize: 10,
   },
   boardWrapper: {
     flex: 1,
@@ -374,6 +419,11 @@ const styles = StyleSheet.create({
   },
   gameOverText: {
     color: '#ef4444',
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  pauseText: {
+    color: '#facc15',
     fontSize: 28,
     fontWeight: 'bold',
   },
@@ -409,3 +459,4 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
+                                
